@@ -1,0 +1,167 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lucky Prize</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#090d18;color:white;font-family:Arial,sans-serif}
+header{text-align:center;padding:28px 15px;background:#111a2b;border-bottom:1px solid #26334b}
+header h1{color:#b69aff;margin:0;font-size:30px}
+header p{color:#aab4c8}
+main{max-width:480px;margin:35px auto;padding:20px}
+.card{background:#141e30;border:1px solid #293952;border-radius:18px;padding:24px;margin-bottom:20px}
+h2{margin-top:0}
+input{width:100%;padding:14px;margin:9px 0 17px;border-radius:9px;border:1px solid #42516b;background:#0b1322;color:white;font-size:16px}
+button{width:100%;padding:14px;border:0;border-radius:9px;background:#8258df;color:white;font-weight:bold;font-size:16px;cursor:pointer}
+button.secondary{background:#34445e;margin-top:10px}
+button.danger{background:#a33b4a;width:auto;padding:9px}
+.result{display:none;background:#102b25;border:1px solid #267b59;border-radius:12px;padding:18px;margin-top:18px}
+.result h2{color:#61e6a4}
+.muted{color:#aab4c8;font-size:13px}
+#adminPanel{display:none}
+.prizeItem{padding:12px 0;border-bottom:1px solid #34445e}
+footer{text-align:center;color:#8290a8;padding:20px;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+<h1>LUCKY PRIZE</h1>
+<p>Your code. Your reward.</p>
+</header>
+
+<main>
+<section class="card" id="customerPanel">
+<h2>Check Your Prize</h2>
+<p class="muted">Enter your unique prize code below.</p>
+<input id="prizeCode" placeholder="Enter your prize code">
+<button onclick="checkPrize()">Check My Prize</button>
+<div id="result" class="result"></div>
+<p id="message" class="muted"></p>
+</section>
+
+<section class="card">
+<h2>Admin Login</h2>
+<p class="muted">Only authorized administrator access.</p>
+<input id="adminEmail" type="email" placeholder="Admin email">
+<input id="adminPassword" type="password" placeholder="Admin password">
+<button onclick="adminLogin()">Login as Admin</button>
+<p id="loginMessage" class="muted"></p>
+</section>
+
+<section class="card" id="adminPanel">
+<h2>Admin Dashboard</h2>
+<p class="muted">Add and manage customer prizes.</p>
+<input id="customerName" placeholder="Customer name">
+<input id="newCode" placeholder="Unique prize code">
+<input id="cashPrize" type="number" min="0" step="0.01" placeholder="Cash prize (₹)">
+<input id="giftPrize" placeholder="Gift prize">
+<button onclick="addPrize()">Add Customer Prize</button>
+<button class="secondary" onclick="loadPrizes()">Refresh Prize List</button>
+<div id="prizeList"></div>
+<button class="secondary" onclick="adminLogout()">Logout</button>
+</section>
+</main>
+
+<footer>© 2026 Lucky Prize</footer>
+
+<script>
+// Add your Supabase Project URL and anon/public key here.
+const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function checkPrize(){
+ const code=document.getElementById("prizeCode").value.trim();
+ const result=document.getElementById("result");
+ const message=document.getElementById("message");
+ result.style.display="none";
+ message.textContent="";
+ if(!code){message.textContent="Please enter your prize code.";return;}
+ const {data,error}=await db.rpc("check_prize",{p_code:code});
+ if(error){message.textContent="Unable to check right now. Please try again.";return;}
+ if(!data || data.length===0){message.textContent="No published prize found for this code.";return;}
+ const prize=data[0];
+ result.innerHTML=`<h2>Congratulations!</h2>
+ <p><b>Customer:</b> ${safe(prize.customer_name)}</p>
+ <p><b>Cash Prize:</b> ₹${Number(prize.cash_prize).toLocaleString("en-IN")}</p>
+ <p><b>Gift Prize:</b> ${safe(prize.gift_prize || "Not assigned")}</p>`;
+ result.style.display="block";
+}
+
+function safe(value){
+ return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function adminLogin(){
+ const email=document.getElementById("adminEmail").value.trim();
+ const password=document.getElementById("adminPassword").value;
+ const msg=document.getElementById("loginMessage");
+ msg.textContent="Checking login...";
+ const {error}=await db.auth.signInWithPassword({email,password});
+ if(error){msg.textContent="Login failed. Check your email and password.";return;}
+ const {const {data,error:roleError}=await db.rpc("is_lucky_admin");
+ if(roleError || data!==true){
+  await db.auth.signOut();
+  msg.textContent="This account is not authorized as admin.";
+  return;
+ }
+ msg.textContent="Admin login successful.";
+ document.getElementById("adminPanel").style.display="block";
+ await loadPrizes();
+}
+
+async function addPrize(){
+ const name=document.getElementById("customerName").value.trim();
+ const code=document.getElementById("newCode").value.trim();
+ const cash=Number(document.getElementById("cashPrize").value || 0);
+ const gift=document.getElementById("giftPrize").value.trim();
+ if(!name || !code || cash<0){alert("Enter a name, unique code and valid cash amount.");return;}
+ const {error}=await db.from("prizes").insert({
+  customer_name:name,code:code,cash_prize:cash,
+  gift_prize:gift,is_published:true
+ });
+ if(error){alert("Could not add prize. Check the code is unique.");return;}
+ alert("Customer prize added.");
+ ["customerName","newCode","cashPrize","giftPrize"].forEach(id=>document.getElementById(id).value="");
+ await loadPrizes();
+}
+
+async function loadPrizes(){
+ const {data,error}=await db.from("prizes").select("*").order("created_at",{ascending:false});
+ const list=document.getElementById("prizeList");
+ if(error){list.textContent="Could not load prizes.";return;}
+ list.innerHTML="<h3>Customer Prizes</h3>";
+ data.forEach(p=>{
+  const item=document.createElement("div");
+  item.className="prizeItem";
+  const info=document.createElement("p");
+  info.textContent=p.customer_name+" — "+p.code+" — ₹"+p.cash_prize+" — "+(p.gift_prize||"No gift");
+  const del=document.createElement("button");
+  del.className="danger";
+  del.textContent="Delete";
+  del.onclick=()=>deletePrize(p.id);
+  item.append(info,del);
+  list.append(item);
+ });
+}
+
+async function deletePrize(id){
+ if(!confirm("Delete this prize record?"))return;
+ const {error}=await db.from("prizes").delete().eq("id",id);
+ if(error){alert("Delete failed.");return;}
+ await loadPrizes();
+}
+
+async function adminLogout(){
+ await db.auth.signOut();
+ document.getElementById("adminPanel").style.display="none";
+ document.getElementById("loginMessage").textContent="Logged out.";
+}
+</script>
+</body>
+</html>
