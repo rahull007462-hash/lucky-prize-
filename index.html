@@ -104,7 +104,7 @@ async function adminLogin(){
  msg.textContent="Checking login...";
  const {error}=await db.auth.signInWithPassword({email,password});
  if(error){msg.textContent="Login failed. Check your email and password.";return;}
- const {const {data,error:roleError}=await db.rpc("is_lucky_admin");
+ const { data, error: roleError } = await db.rpc("is_lucky_admin");
  if(roleError || data!==true){
   await db.auth.signOut();
   msg.textContent="This account is not authorized as admin.";
